@@ -74,6 +74,7 @@
 
                     <div class="hand-slot"
                          data-hand-index="@idx"
+                         data-card-key="@BoardSnapshot.Key(card)"
                          data-playable="@(selectable ? "true" : "false")"
                          @key="(card.Rank * 4 + card.Suit)">
                         <CardView Card="card"
@@ -225,13 +226,14 @@
             await _dndModule.InvokeVoidAsync("init", _root, _selfRef);
         }
 
-        if (_pendingDiff is { IsEmpty: false } diff && _dndModule != null && !firstRender)
+        if (_dndModule != null)
         {
+            var diff = _pendingDiff;
             _pendingDiff = null;
 
             try
             {
-                await _dndModule.InvokeVoidAsync("animate", diff.ToPayload());
+                await _dndModule.InvokeVoidAsync("afterRender", diff is { IsEmpty: false } ? diff.ToPayload() : null);
             }
             catch (JSDisconnectedException)
             {
@@ -239,10 +241,6 @@
             catch (JSException)
             {
             }
-        }
-        else
-        {
-            _pendingDiff = null;
         }
     }
 
@@ -347,8 +345,6 @@
         var hand = _handActive.OrderBy(x => x).ToArray();
         var field = _fieldActive.OrderBy(x => x).ToArray();
         int? attackIndex = field.Length > 0 ? field[0] : null;
-
-        MarkPlayedByMe(hand);
 
         await Guard(() => Table.PlayCards(Me.AuthSecret, hand, attackIndex));
         _handActive.Clear();
@@ -627,6 +623,8 @@
             if (nextFieldCount > prevFieldCount && next.ActiveIndex is { } thrower)
             {
                 var seen = new HashSet<string>();
+                var myPrev = new HashSet<string>(prev.MyCards);
+                var myNext = new HashSet<string>(next.MyCards);
 
                 for (var i = 0; i < nextField.Length; i++)
                 {
@@ -635,7 +633,8 @@
                     if (!prevAttackSet.Contains(key) && !justPlayedByMe.Contains(key) && seen.Add(key))
                     {
                         var face = Face(key);
-                        throwIns.Add(new ThrowIn(face.Rank, face.Suit, i, thrower));
+                        var from = myPrev.Contains(key) && !myNext.Contains(key) ? next.MyIndex : thrower;
+                        throwIns.Add(new ThrowIn(face.Rank, face.Suit, i, from));
                     }
                 }
             }

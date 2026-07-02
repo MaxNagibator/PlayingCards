@@ -8,6 +8,13 @@
     --gold-dim: #a8843f;
     --parchment: #f1e6c8;
     --serif: 'Georgia', 'Times New Roman', serif;
+
+    --flick: 0.14s;
+    --settle: 0.24s;
+    --deal: 0.38s;
+    --breathe: 2.2s;
+    --ease-settle: cubic-bezier(0.2, 0.75, 0.25, 1);
+    --ease-snap: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 html, body {
@@ -36,7 +43,7 @@ body::before {
 a {
     color: var(--gold);
     text-decoration: none;
-    transition: color 0.18s ease;
+    transition: color var(--flick) ease;
 }
 
 a:hover {
@@ -59,7 +66,7 @@ a:hover {
     line-height: 1.2;
     cursor: pointer;
     box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
-    transition: transform 0.12s ease, filter 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+    transition: transform var(--flick) var(--ease-settle), filter var(--flick) ease, box-shadow var(--flick) ease, opacity var(--flick) ease;
 }
 
 .btn:hover:not(:disabled) {
@@ -166,6 +173,12 @@ body.dnd-dragging * {
 @keyframes dnd-spark {
     0% { transform: translate(0, 0) scale(1); opacity: 1; }
     100% { transform: translate(var(--tx), var(--ty)) scale(0.2); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .dnd-sparkle-layer {
+        display: none;
+    }
 }
 
 .dnd-pulse-ring {

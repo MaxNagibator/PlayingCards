@@ -19,9 +19,9 @@
     cursor: pointer;
     user-select: none;
     transition:
-        transform 0.14s ease,
-        box-shadow 0.18s ease,
-        filter 0.18s ease;
+        transform var(--flick) var(--ease-settle),
+        box-shadow var(--flick) ease,
+        filter var(--flick) ease;
 }
 
 .play-card::after {

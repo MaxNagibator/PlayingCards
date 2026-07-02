@@ -273,6 +273,13 @@
     animation: dnd-zone-breathe 1.4s ease-in-out infinite;
 }
 
+@media (prefers-reduced-motion: reduce) {
+    .field.drop-ok,
+    .field-card.drop-ok::before {
+        animation: none;
+    }
+}
+
 .field.drop-hover {
     border-color: rgba(231, 200, 134, 0.95);
     background: rgba(38, 78, 52, 0.55);

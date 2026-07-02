@@ -23,7 +23,7 @@
     padding: 1.5rem;
     background: rgba(6, 16, 11, 0.62);
     backdrop-filter: blur(2px);
-    animation: invite-fade 0.2s ease-out;
+    animation: invite-fade var(--settle) ease-out;
 }
 
 .invite-dialog {
@@ -38,7 +38,7 @@
     box-shadow:
         0 26px 60px rgba(0, 0, 0, 0.55),
         inset 0 1px 0 rgba(255, 255, 255, 0.05);
-    animation: invite-pop 0.34s cubic-bezier(0.34, 1.56, 0.64, 1);
+    animation: invite-pop var(--settle) var(--ease-snap);
 }
 
 .invite-x {
@@ -55,7 +55,7 @@
     font-size: 0.85rem;
     line-height: 1;
     cursor: pointer;
-    transition: background 0.16s ease, color 0.16s ease, border-color 0.16s ease;
+    transition: background var(--flick) ease, color var(--flick) ease, border-color var(--flick) ease;
 }
 
 .invite-x:hover {
@@ -116,7 +116,7 @@
     color: #e3c886;
     font-size: 0.85rem;
     letter-spacing: 0.03em;
-    animation: invite-fade 0.22s ease-out;
+    animation: invite-fade var(--settle) ease-out;
 }
 
 @keyframes invite-fade {

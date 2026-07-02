@@ -17,7 +17,7 @@
                          IsDefence="item.GameIndex == View.DefencePlayerIndex"
                          IsLooser="item.GameIndex == View.LooserPlayerIndex"
                          IsBot="item.Player.IsBot"
-                         Reply="item.Player.Reply"
+                         Reply="@item.Player.Reply"
                          CardsCount="item.Player.CardsCount"
                          ShowTrump="ShowTrump(item.GameIndex)"
                          MinTrumpCard="MinTrumpCard"
