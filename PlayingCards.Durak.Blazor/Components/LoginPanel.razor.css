@@ -42,7 +42,13 @@
 }
 
 .login-suits .suit {
-    animation: suit-rise 2.4s ease-in-out infinite;
+    animation: suit-rise var(--breathe) ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .login-suits .suit {
+        animation: none;
+    }
 }
 
 .login-suits .suit-diamond,
@@ -98,7 +104,7 @@
     color: #f1e6c8;
     font-size: 1.05rem;
     letter-spacing: 0.02em;
-    transition: border-color 0.18s ease, box-shadow 0.18s ease;
+    transition: border-color var(--flick) ease, box-shadow var(--flick) ease;
 }
 
 .login-input::placeholder {
@@ -122,7 +128,7 @@
     font-size: 1.05rem;
     letter-spacing: 0.05em;
     cursor: pointer;
-    transition: transform 0.12s ease, box-shadow 0.18s ease, filter 0.18s ease;
+    transition: transform var(--flick) var(--ease-settle), box-shadow var(--flick) ease, filter var(--flick) ease;
 }
 
 .login-block .btn-info:hover:not(:disabled) {

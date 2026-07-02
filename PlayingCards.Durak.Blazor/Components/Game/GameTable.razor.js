@@ -8,6 +8,24 @@ let animToken = 0;
 let animLayer = null;
 const ANIM_MAX_CLONES = 14;
 
+let handRects = new Map();
+let freshSlots = [];
+let dealDur = 0;
+
+function dealDuration() {
+    if (!dealDur) {
+        const raw = getComputedStyle(document.documentElement).getPropertyValue('--deal');
+        const v = parseFloat(raw);
+        dealDur = raw.trim().endsWith('ms') ? v : v * 1000;
+
+        if (!dealDur || Number.isNaN(dealDur)) {
+            dealDur = 380;
+        }
+    }
+
+    return dealDur;
+}
+
 export function init(rootEl, dotNetRef) {
     root = rootEl;
     dnet = dotNetRef;
@@ -22,6 +40,8 @@ export function dispose() {
     detachWindow();
     cleanup();
     clearAnim();
+    handRects = new Map();
+    freshSlots = [];
     root = null;
     dnet = null;
 }
@@ -390,11 +410,57 @@ function clamp(v, lo, hi) {
     return v < lo ? lo : (v > hi ? hi : v);
 }
 
-export function animate(diff) {
-    if (!diff || prefersReducedMotion() || !root) {
+export function afterRender(diff) {
+    if (!root) {
         return;
     }
 
+    syncHand();
+
+    if (diff && !prefersReducedMotion()) {
+        animate(diff);
+    }
+}
+
+function syncHand() {
+    const slots = root.querySelectorAll('.hand-slot[data-card-key]');
+    const next = new Map();
+    const fresh = [];
+    const reduced = prefersReducedMotion();
+    const prevEmpty = handRects.size === 0;
+    const hand = root.querySelector('.hand');
+    const scroll = hand ? hand.scrollLeft : 0;
+
+    for (const slot of slots) {
+        const key = slot.dataset.cardKey;
+        const rect = slot.getBoundingClientRect();
+        next.set(key, { left: rect.left + scroll, top: rect.top });
+
+        const prev = handRects.get(key);
+
+        if (!prev) {
+            fresh.push(slot);
+            continue;
+        }
+
+        const dx = prev.left - (rect.left + scroll);
+        const dy = prev.top - rect.top;
+
+        if (!reduced && (Math.abs(dx) > 2 || Math.abs(dy) > 2)) {
+            slot.animate(
+                [
+                    { transform: `translate(${dx}px, ${dy}px)` },
+                    { transform: 'translate(0, 0)' },
+                ],
+                { duration: dealDuration() * 0.7, easing: 'cubic-bezier(0.2, 0.75, 0.25, 1)' });
+        }
+    }
+
+    handRects = next;
+    freshSlots = prevEmpty ? [] : fresh;
+}
+
+function animate(diff) {
     clearAnim();
     const token = ++animToken;
     const layer = document.createElement('div');
@@ -479,7 +545,8 @@ function flySweep(layer, token, cards, from, to, budget, faceDown) {
     for (let i = 0; i < n; i++) {
         const node = faceDown ? backCard() : faceCard(cards[i].rank, cards[i].suit);
         const jx = (i - (n - 1) / 2) * 16;
-        flyBetween(layer, token, node, from.x + jx, from.y, to.x, to.y, i * 45, true);
+        const spin = (i % 2 ? 1 : -1) * (8 + (i % 3) * 4);
+        flyBetween(layer, token, node, from.x + jx, from.y, to.x, to.y, i * 45, true, spin);
     }
 
     return budget - n;
@@ -491,18 +558,21 @@ function flyDraws(layer, token, draws, deck, budget) {
             break;
         }
 
-        const targets = drawTargets(d);
-        const count = Math.min(d.count, targets.length || d.count);
-        const n = Math.min(count, budget);
+        if (d.toType === 'hand') {
+            budget = flyDrawsToHand(layer, token, d.count, deck, budget);
+            continue;
+        }
+
+        const to = rectOf(badge(d.badgeIndex));
+
+        if (!to) {
+            continue;
+        }
+
+        const n = Math.min(d.count, budget);
 
         for (let i = 0; i < n; i++) {
-            const tr = targets[i] || targets[targets.length - 1] || null;
-
-            if (!tr) {
-                continue;
-            }
-
-            flyBetween(layer, token, backCard(), deck.x, deck.y, tr.x, tr.y, i * 80, false);
+            flyBetween(layer, token, backCard(), deck.x, deck.y, to.x, to.y, i * 80, false, (i % 2 ? -6 : 6));
             budget--;
         }
     }
@@ -510,30 +580,43 @@ function flyDraws(layer, token, draws, deck, budget) {
     return budget;
 }
 
-function drawTargets(d) {
-    if (d.toType === 'hand') {
-        const slots = [...root.querySelectorAll('.hand-slot')];
-        const tail = slots.slice(Math.max(0, slots.length - d.count));
-        return tail.map(rectOf).filter(Boolean);
+function flyDrawsToHand(layer, token, count, deck, budget) {
+    const slots = freshSlots.slice(0, count);
+    let k = 0;
+
+    for (const slot of slots) {
+        if (budget <= 0) {
+            break;
+        }
+
+        const card = slot.querySelector('.play-card');
+
+        if (!card) {
+            continue;
+        }
+
+        flyCardOnto(layer, token, card, deck, k * 80, 0);
+        budget--;
+        k++;
     }
 
-    const r = rectOf(badge(d.badgeIndex));
-    return r ? [r] : [];
+    return budget;
 }
 
-function flyBetween(layer, token, node, fromX, fromY, toX, toY, delay, fadeOut) {
+function flyBetween(layer, token, node, fromX, fromY, toX, toY, delay, fadeOut, spin = 0) {
     node.style.position = 'fixed';
     node.style.left = '0';
     node.style.top = '0';
     node.style.margin = '0';
     node.style.pointerEvents = 'none';
     node.style.opacity = fadeOut ? '1' : '0';
-    node.style.transform = `translate(${fromX}px, ${fromY}px) translate(-50%, -50%) scale(0.82)`;
+    node.style.transform = `translate(${fromX}px, ${fromY}px) translate(-50%, -50%) rotate(${spin}deg) scale(0.82)`;
     node.style.willChange = 'transform, opacity';
     layer.appendChild(node);
 
     const start = performance.now() + delay;
-    const dur = 360;
+    const dur = dealDuration();
+    const arc = Math.min(70, Math.hypot(toX - fromX, toY - fromY) * 0.16);
 
     function step(now) {
         if (token !== animToken) {
@@ -549,10 +632,12 @@ function flyBetween(layer, token, node, fromX, fromY, toX, toY, delay, fadeOut) 
 
         const p = t >= 1 ? 1 : ease(t);
         const pop = t >= 1 ? 1 : Math.min(1, easeOutBack(t));
+        const lift = t >= 1 ? 0 : Math.sin(Math.PI * p) * arc;
         const x = fromX + (toX - fromX) * p;
-        const y = fromY + (toY - fromY) * p;
+        const y = fromY + (toY - fromY) * p - lift;
         const scale = 0.82 + 0.18 * pop;
-        node.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%) scale(${scale})`;
+        const rot = spin * (1 - p);
+        node.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%) rotate(${rot}deg) scale(${scale})`;
 
         if (fadeOut) {
             node.style.opacity = t > 0.7 ? String(Math.max(0, 1 - (t - 0.7) / 0.3)) : '1';
@@ -603,15 +688,19 @@ function flyCardOnto(layer, token, cardEl, from, delay, endRot) {
     clone.style.willChange = 'transform';
     clone.style.transformOrigin = 'center';
     clone.style.transition = 'none';
+
+    const dx = from.x - cx;
+    const dy = from.y - cy;
+    const rot0 = clamp(-dx * 0.04, -14, 14);
+
+    clone.style.transform = `translate(${dx}px, ${dy}px) rotate(${rot0}deg) scale(0.6)`;
     layer.appendChild(clone);
 
     cardEl.style.visibility = 'hidden';
 
-    const dx = from.x - cx;
-    const dy = from.y - cy;
-
     const start = performance.now() + delay;
-    const dur = 360;
+    const dur = dealDuration();
+    const arc = Math.min(70, Math.hypot(dx, dy) * 0.16);
     let done = false;
 
     function land() {
@@ -639,10 +728,11 @@ function flyCardOnto(layer, token, cardEl, from, delay, endRot) {
 
         const p = t >= 1 ? 1 : ease(t);
         const pop = t >= 1 ? 1 : easeOutBack(t);
+        const lift = t >= 1 ? 0 : Math.sin(Math.PI * p) * arc;
         const x = dx * (1 - p);
-        const y = dy * (1 - p);
+        const y = dy * (1 - p) - lift;
         const scale = 0.6 + 0.4 * pop;
-        const rot = -8 * (1 - p) + endRot * p;
+        const rot = rot0 * (1 - p) + endRot * p;
         clone.style.transform = `translate(${x}px, ${y}px) rotate(${rot}deg) scale(${scale})`;
 
         if (t < 1) {
