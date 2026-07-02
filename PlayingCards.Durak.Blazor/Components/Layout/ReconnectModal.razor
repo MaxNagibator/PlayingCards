@@ -3,29 +3,28 @@
 <dialog id="components-reconnect-modal" data-nosnippet>
     <div class="components-reconnect-container">
         <div class="components-rejoining-animation" aria-hidden="true">
-            <div></div>
-            <div></div>
+            <span>♠</span><span>♦</span><span>♣</span><span>♥</span>
         </div>
         <p class="components-reconnect-first-attempt-visible">
-            Rejoining the server...
+            Восстанавливаем связь со столом…
         </p>
         <p class="components-reconnect-repeated-attempt-visible">
-            Rejoin failed... trying again in <span id="components-seconds-to-next-attempt"></span> seconds.
+            Не вышло… следующая попытка через <span id="components-seconds-to-next-attempt"></span> с.
         </p>
         <p class="components-reconnect-failed-visible">
-            Failed to rejoin.<br />Please retry or reload the page.
+            Подключиться не удалось.<br />Попробуйте ещё раз или обновите страницу.
         </p>
         <button id="components-reconnect-button" class="components-reconnect-failed-visible">
-            Retry
+            Повторить
         </button>
         <p class="components-pause-visible">
-            The session has been paused by the server.
+            Сервер приостановил партию.
         </p>
         <p class="components-resume-failed-visible">
-            Failed to resume the session.<br />Please retry or reload the page.
+            Не удалось продолжить партию.<br />Попробуйте ещё раз или обновите страницу.
         </p>
         <button id="components-resume-button" class="components-pause-visible components-resume-failed-visible">
-            Resume
+            Продолжить
         </button>
     </div>
 </dialog>
