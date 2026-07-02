@@ -14,7 +14,7 @@
         0 10px 24px rgba(0, 0, 0, 0.4),
         inset 0 1px 0 rgba(255, 255, 255, 0.04);
     vertical-align: top;
-    transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+    transition: border-color var(--settle) ease, box-shadow var(--settle) ease, transform var(--settle) var(--ease-settle);
 }
 
 .player img {
@@ -83,8 +83,8 @@
     cursor: pointer;
     opacity: 0;
     transform: scale(0.7);
-    transition: opacity 0.16s ease, transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1),
-        background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+    transition: opacity var(--flick) ease, transform var(--flick) var(--ease-snap),
+        background var(--flick) ease, border-color var(--flick) ease, color var(--flick) ease;
 }
 
 .player:hover .kick-btn,
@@ -113,7 +113,7 @@
 
 @media (prefers-reduced-motion: reduce) {
     .kick-btn {
-        transition: opacity 0.16s ease, background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+        transition: opacity var(--flick) ease, background var(--flick) ease, border-color var(--flick) ease, color var(--flick) ease;
     }
 
     .player:hover .kick-btn,
@@ -164,7 +164,7 @@
     box-shadow: 0 0 18px 3px rgba(196, 164, 92, 0.5);
     opacity: 0;
     will-change: opacity;
-    animation: active-pulse 2.2s ease-in-out infinite;
+    animation: active-pulse var(--breathe) ease-in-out infinite;
 }
 
 @keyframes active-pulse {
