@@ -12,6 +12,7 @@ let handRects = new Map();
 let freshSlots = [];
 let dealDur = 0;
 let handObserver = null;
+let armedPreFly = new WeakSet();
 
 function dealDuration() {
     if (!dealDur) {
@@ -32,12 +33,17 @@ export function init(rootEl, dotNetRef) {
     dnet = dotNetRef;
     root.addEventListener('pointerdown', onPointerDown);
 
-    // MutationObserver ловит перестановку .hand-slot синхронно, микротаском сразу после
+    // MutationObserver ловит любую вставку карты (рука/поле) синхронно, микротаском сразу после
     // DOM-патча Blazor, до пейнта. afterRender() же приходит только после RTT сервер-клиент
     // и потому не успевает измерить/спрятать карту до кадра.
-    handObserver = new MutationObserver(syncHand);
+    handObserver = new MutationObserver(onBoardMutated);
     handObserver.observe(root, { childList: true, subtree: true });
+    onBoardMutated();
+}
+
+function onBoardMutated() {
     syncHand();
+    armPreFly();
 }
 
 export function dispose() {
@@ -55,6 +61,7 @@ export function dispose() {
     clearAnim();
     handRects = new Map();
     freshSlots = [];
+    armedPreFly = new WeakSet();
     root = null;
     dnet = null;
 }
@@ -428,15 +435,7 @@ export function afterRender(diff) {
         return;
     }
 
-    if (prefersReducedMotion()) {
-        for (const slot of freshSlots) {
-            releasePreFly(slot);
-        }
-
-        return;
-    }
-
-    if (diff) {
+    if (diff && !prefersReducedMotion()) {
         animate(diff);
     }
 }
@@ -477,32 +476,36 @@ function syncHand() {
 
     handRects = next;
     freshSlots = prevEmpty ? [] : fresh;
+}
 
-    for (const slot of freshSlots) {
-        armPreFlyFallback(slot, reduced);
+// Единая точка страховки для ЛЮБОЙ карты, помеченной сервером классом pre-fly (рука/поле,
+// visibility:hidden в CardView.razor.css) — чтобы не мелькнуть в финальной позиции до прилёта
+// клона (flyCardOnto → land() снимает класс раньше срока). Если анимация не случилась (budget
+// ANIM_MAX_CLONES исчерпан, обрыв связи, reduced-motion) — снимаем сами по таймауту, иначе
+// карта останется невидимой навсегда. armedPreFly не даёт переставить таймер повторно на
+// том же элементе при последующих мутациях.
+function armPreFly() {
+    const reduced = prefersReducedMotion();
+
+    for (const card of root.querySelectorAll('.play-card.pre-fly')) {
+        if (armedPreFly.has(card)) {
+            continue;
+        }
+
+        armedPreFly.add(card);
+
+        if (reduced) {
+            releasePreFly(card);
+            continue;
+        }
+
+        setTimeout(() => releasePreFly(card), dealDuration() + 250);
     }
 }
 
-// Карта помечена сервером классом pre-fly (visibility:hidden), чтобы не мелькнуть в финальной
-// позиции до прилёта клона из колоды (flyCardOnto → land() снимает класс раньше срока). Если
-// diff не пришёл (budget исчерпан, обрыв связи, reduced-motion) — снимаем сами по таймауту,
-// иначе карта останется невидимой навсегда.
-function armPreFlyFallback(slot, reduced) {
-    if (reduced) {
-        releasePreFly(slot);
-        return;
-    }
-
-    setTimeout(() => releasePreFly(slot), dealDuration() + 250);
-}
-
-function releasePreFly(slot) {
-    slot.classList.remove('pre-fly');
-    const card = slot.querySelector('.play-card');
-
-    if (card) {
-        card.style.visibility = '';
-    }
+function releasePreFly(card) {
+    card.classList.remove('pre-fly');
+    card.style.visibility = '';
 }
 
 function animate(diff) {
@@ -721,7 +724,7 @@ function flyCardOnto(layer, token, cardEl, from, delay, endRot) {
     const cy = r.top + r.height / 2;
 
     const clone = cardEl.cloneNode(true);
-    clone.classList.remove('active', 'dimmed', 'dnd-ghost');
+    clone.classList.remove('active', 'dimmed', 'dnd-ghost', 'pre-fly');
     clone.style.visibility = 'visible';
     clone.style.position = 'fixed';
     clone.style.margin = '0';
@@ -754,8 +757,7 @@ function flyCardOnto(layer, token, cardEl, from, delay, endRot) {
         }
 
         done = true;
-        cardEl.style.visibility = '';
-        cardEl.closest('.hand-slot')?.classList.remove('pre-fly');
+        releasePreFly(cardEl);
         clone.remove();
     }
 
