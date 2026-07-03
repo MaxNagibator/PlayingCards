@@ -126,6 +126,35 @@
     }
 }
 
+.beat-vote {
+    position: absolute;
+    bottom: -0.35rem;
+    left: -0.35rem;
+    z-index: 4;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.1rem;
+    height: 1.1rem;
+    padding: 0 0.15rem;
+    border-radius: 50%;
+    font-size: 0.68rem;
+    line-height: 1;
+    border: 1px solid rgba(196, 164, 92, 0.45);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.45);
+}
+
+.beat-vote.waiting {
+    background: rgba(60, 60, 66, 0.55);
+    color: #d8d4cc;
+}
+
+.beat-vote.voted {
+    background: rgba(58, 120, 74, 0.62);
+    border-color: rgba(150, 210, 140, 0.6);
+    color: #eafbe0;
+}
+
 .player-cards {
     --fan-w: 5rem;
     --card-w: 1.5rem;

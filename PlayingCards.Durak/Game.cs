@@ -151,7 +151,6 @@ public class Game
     {
         CheckGameInProcess();
 
-        // todo добавить lock(object) в рамках одной игры, тут потоконебезопасно.
         if (IsRoundStarted() == false)
         {
             throw new BusinessException("round not started");

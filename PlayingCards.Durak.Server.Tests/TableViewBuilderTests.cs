@@ -99,6 +99,39 @@ public class TableViewBuilderTests
         });
     }
 
+    [TestCase(StopRoundStatus.SuccessDefence)]
+    [TestCase(StopRoundStatus.Take)]
+    public void BuildTable_CanBeat_TrueForAttackerInEitherStopRoundWindow(StopRoundStatus status)
+    {
+        _table.StopRoundBeginDate = DateTime.UtcNow;
+        _table.StopRoundStatus = status;
+
+        var vm = TableViewBuilder.BuildTable(_table, _me);
+
+        Assert.That(vm.CanBeat, Is.True, "«Бито» доступно и в окне удачной защиты, и в окне «беру» (issue #10)");
+    }
+
+    [Test]
+    public void BuildTable_MySaidBeat_ReflectsVote()
+    {
+        var before = TableViewBuilder.BuildTable(_table, _me);
+        Assert.That(before.MySaidBeat, Is.False);
+
+        _me.SaidBeat = true;
+        var after = TableViewBuilder.BuildTable(_table, _me);
+        Assert.That(after.MySaidBeat, Is.True);
+    }
+
+    [Test]
+    public void BuildTable_OpponentSaidBeat_ExposedOnPlayerModel()
+    {
+        _table.Players[1].SaidBeat = true;
+
+        var vm = TableViewBuilder.BuildTable(_table, _me);
+
+        Assert.That(vm.Players[0].SaidBeat, Is.True);
+    }
+
     [Test]
     public void BuildLobby_ReturnsTableWithPlayerNames()
     {
