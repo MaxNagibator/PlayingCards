@@ -74,6 +74,13 @@ public class Table
     /// </summary>
     public int Number { get; set; }
 
+    /// <summary>
+    /// Лочит все мутации этого стола: клиентские вызовы (PlayCards/Take/Beat/...) и фоновый тик
+    /// (<see cref="TableHolder" />) конкурируют за один и тот же <see cref="Game" />/<see cref="Players" />
+    /// без синхронизации иначе. Порядок захвата всегда TableHolder._sync снаружи → SyncRoot внутри.
+    /// </summary>
+    internal readonly object SyncRoot = new();
+
     public void SetActivePlayerAfkStartTime()
     {
         SetAfk(Game.ActivePlayer, DateTime.UtcNow);
@@ -136,69 +143,81 @@ public class Table
 
     public void StartGame()
     {
-        Game.StartGame();
-        var log = new StringBuilder();
-        log.AppendLine("deck: " + string.Join(' ', Game.Deck.Cards.Select(x => x.ToString())));
-
-        for (var i = 0; i < Game.Players.Count; i++)
+        lock (SyncRoot)
         {
-            log.AppendLine("pl-" + i + ": " + string.Join(' ', Game.Players[i].Hand.Cards.Select(x => x.ToString())));
+            Game.StartGame();
+            var log = new StringBuilder();
+            log.AppendLine("deck: " + string.Join(' ', Game.Deck.Cards.Select(x => x.ToString())));
+
+            for (var i = 0; i < Game.Players.Count; i++)
+            {
+                log.AppendLine("pl-" + i + ": " + string.Join(' ', Game.Players[i].Hand.Cards.Select(x => x.ToString())));
+            }
+
+            CleanLeaverPlayer();
+            CleanStopRound();
+            SetActivePlayerAfkStartTime();
+            Version++;
+
+            WriteLog("", "start game: \r\n" + log);
         }
-
-        CleanLeaverPlayer();
-        CleanStopRound();
-        SetActivePlayerAfkStartTime();
-        Version++;
-
-        WriteLog("", "start game: \r\n" + log);
     }
 
     public void PlayCards(string playerSecret, int[] cardIndexes, int? attackCardIndex = null)
     {
-        CheckGameInProcess();
-        var tablePlayer = Players.Single(player => player.AuthSecret == playerSecret);
+        lock (SyncRoot)
+        {
+            CheckGameInProcess();
+            var tablePlayer = GetTablePlayer(playerSecret);
 
-        if (attackCardIndex != null)
-        {
-            Defence(tablePlayer, cardIndexes.First(), attackCardIndex.Value);
-        }
-        else
-        {
-            if (Game.IsRoundStarted())
+            if (attackCardIndex != null)
             {
-                Attack(tablePlayer, cardIndexes);
+                Defence(tablePlayer, cardIndexes.First(), attackCardIndex.Value);
             }
             else
             {
-                StartAttack(tablePlayer, cardIndexes);
+                if (Game.IsRoundStarted())
+                {
+                    Attack(tablePlayer, cardIndexes);
+                }
+                else
+                {
+                    StartAttack(tablePlayer, cardIndexes);
+                }
             }
-        }
 
-        CheckEndGame();
-        Version++;
+            CheckEndGame();
+            Version++;
+        }
     }
 
     public void Take(string playerSecret)
     {
-        CheckGameInProcess();
-
-        var tablePlayer = Players.Single(x => x.AuthSecret == playerSecret);
-
-        if (Game.DefencePlayer != tablePlayer.Player)
+        lock (SyncRoot)
         {
-            throw new BusinessException("Забирать карты может только защищающийся");
-        }
+            CheckGameInProcess();
 
-        if (Game.Cards.Count == 0)
-        {
-            throw new BusinessException("На столе нет карт");
-        }
+            var tablePlayer = GetTablePlayer(playerSecret);
 
-        CheckStopRoundBeginDate();
-        StopRoundStatus = SRS.Take;
-        CleanDefencePlayerAfkStartTime();
-        WriteLog(playerSecret, "take");
-        Version++;
+            if (Game.DefencePlayer != tablePlayer.Player)
+            {
+                throw new BusinessException("Забирать карты может только защищающийся");
+            }
+
+            if (Game.Cards.Count == 0)
+            {
+                throw new BusinessException("На столе нет карт");
+            }
+
+            CheckStopRoundBeginDate();
+            StopRoundStatus = SRS.Take;
+            CleanDefencePlayerAfkStartTime();
+            WriteLog(playerSecret, "take");
+
+            TryCloseStopRound();
+
+            Version++;
+        }
     }
 
     /// <summary>Реплики атакующего, объявляющего «Бито». Единый источник — и для людей, и для ботов.</summary>
@@ -206,40 +225,90 @@ public class Table
 
     /// <summary>
     /// «Бито»: атакующий объявляет, что больше не подкидывает (issue F5). Раунд закрывается досрочно,
-    /// только когда «Бито» сказали ВСЕ атакующие; иначе по-прежнему ждём общий таймер удачной защиты.
-    /// Пришло на смену авто-таймеру «никто не может ходить», который выдавал отсутствие карт у других.
-    /// Над сказавшим всплывает реплика.
+    /// только когда «Бито» сказали ВСЕ атакующие; иначе по-прежнему ждём общий таймер. Работает и в окне
+    /// удачной защиты, и в окне «беру» — защищающийся не обязан ждать полный <see cref="TableHolder.STOP_ROUND_TAKE_SECONDS" />,
+    /// если подкидывать всё равно некому (issue #10). Пришло на смену авто-таймеру «никто не может ходить»,
+    /// который выдавал отсутствие карт у других. Над сказавшим всплывает реплика.
     /// </summary>
     public void Beat(string playerSecret)
     {
-        CheckGameInProcess();
-
-        var tablePlayer = Players.Single(x => x.AuthSecret == playerSecret);
-
-        if (StopRoundBeginDate == null || StopRoundStatus != SRS.SuccessDefence)
+        lock (SyncRoot)
         {
-            throw new BusinessException("Сейчас нельзя закрыть раунд");
+            CheckGameInProcess();
+
+            var tablePlayer = GetTablePlayer(playerSecret);
+
+            if (StopRoundBeginDate == null || StopRoundStatus is not (SRS.SuccessDefence or SRS.Take))
+            {
+                throw new BusinessException("Сейчас нельзя закрыть раунд");
+            }
+
+            if (Game.DefencePlayer == tablePlayer.Player)
+            {
+                throw new BusinessException("Защищающийся не закрывает раунд");
+            }
+
+            if (tablePlayer.Player.Hand.Cards.Count == 0)
+            {
+                throw new BusinessException("Нечего подкидывать — голос не нужен");
+            }
+
+            if (tablePlayer.SaidBeat)
+            {
+                throw new BusinessException("Вы уже сказали «Бито»");
+            }
+
+            tablePlayer.SaidBeat = true;
+            tablePlayer.Reply = ReplyPhrases[Random.Shared.Next(ReplyPhrases.Length)];
+            tablePlayer.ReplyDate = DateTime.UtcNow;
+            WriteLog(playerSecret, "beat");
+
+            TryCloseStopRound();
+
+            Version++;
+        }
+    }
+
+    /// <summary>
+    /// Закрыть окно остановки раунда (удачная защита ИЛИ «беру»), когда «Бито» сказали все атакующие
+    /// с картами (или таких атакующих не осталось вовсе — эндшпиль не должен ждать полный таймер).
+    /// Вызывается и из <see cref="Beat" />, и сразу после того, как окно открылось (<see cref="Defence" />,
+    /// <see cref="Take" />), и после изменения состава игроков (<see cref="TryCloseAfterRosterChange" />) —
+    /// состав/голоса могли уже сойтись без нового «Бито».
+    /// </summary>
+    private void TryCloseStopRound()
+    {
+        if (StopRoundBeginDate == null || StopRoundStatus is not (SRS.SuccessDefence or SRS.Take))
+        {
+            return;
         }
 
-        if (Game.DefencePlayer == tablePlayer.Player)
+        if (!AllAttackersSaidBeat())
         {
-            throw new BusinessException("Защищающийся не закрывает раунд");
+            return;
         }
 
-        tablePlayer.SaidBeat = true;
-        tablePlayer.Reply = ReplyPhrases[Random.Shared.Next(ReplyPhrases.Length)];
-        tablePlayer.ReplyDate = DateTime.UtcNow;
-        WriteLog(playerSecret, "beat");
+        StopRoundStatus = null;
+        StopRoundBeginDate = null;
+        Game.StopRound();
+        SetActivePlayerAfkStartTime();
+    }
 
-        if (AllAttackersSaidBeat())
+    /// <summary>
+    /// Пересчитать досрочное закрытие после того, как за столом изменился состав игроков (Leave/Kick/AFK-кик).
+    /// Ушедший мог быть единственным несказавшим атакующим — без пересчёта раунд висел бы до таймера.
+    /// </summary>
+    internal void TryCloseAfterRosterChange()
+    {
+        lock (SyncRoot)
         {
-            StopRoundStatus = null;
-            StopRoundBeginDate = null;
-            Game.StopRound();
-            SetActivePlayerAfkStartTime();
-        }
+            if (Game.Status != GameStatus.InProcess)
+            {
+                return;
+            }
 
-        Version++;
+            TryCloseStopRound();
+        }
     }
 
     /// <summary>
@@ -282,9 +351,30 @@ public class Table
     /// </remarks>
     public void SetSortMode(string playerSecret, HandSortMode mode)
     {
-        var tablePlayer = Players.Single(player => player.AuthSecret == playerSecret);
-        tablePlayer.Player.Hand.SetSortMode(mode);
-        Version++;
+        lock (SyncRoot)
+        {
+            var tablePlayer = GetTablePlayer(playerSecret);
+            tablePlayer.Player.Hand.SetSortMode(mode);
+            Version++;
+        }
+    }
+
+    /// <summary>
+    /// Найти игрока по секрету. <see cref="Enumerable.Single{TSource}" /> кидает InvalidOperationException,
+    /// если секрет протух (игрок вышел/кикнут в гонке между отправкой запроса и обработкой) — это не
+    /// BusinessException, поэтому не гасится Guard-обвязкой UI и валит circuit/500. Ловим здесь для всех
+    /// мутирующих методов стола.
+    /// </summary>
+    private TablePlayer GetTablePlayer(string playerSecret)
+    {
+        var tablePlayer = Players.FirstOrDefault(x => x.AuthSecret == playerSecret);
+
+        if (tablePlayer == null)
+        {
+            throw new BusinessException("Вы уже не за этим столом");
+        }
+
+        return tablePlayer;
     }
 
     private static StringBuilder GetCardsLog(int[] cardIndexes, TablePlayer tablePlayer)
@@ -380,6 +470,8 @@ public class Table
         CheckStopRoundBeginDate();
         StopRoundStatus = SRS.SuccessDefence;
         CleanDefencePlayerAfkStartTime();
+
+        TryCloseStopRound();
     }
 
     private void CheckGameInProcess()
@@ -420,7 +512,7 @@ public class Table
 
     private void WriteLog(string? playerSecret, string message)
     {
-        var tablePlayer = Players.SingleOrDefault(x => x.AuthSecret == playerSecret);
+        var tablePlayer = Players.FirstOrDefault(x => x.AuthSecret == playerSecret);
         var playerIndex = tablePlayer == null ? null : (int?)Game.Players.IndexOf(tablePlayer.Player);
 
         var logger = LogManager.GetCurrentClassLogger()

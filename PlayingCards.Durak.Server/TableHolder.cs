@@ -101,20 +101,24 @@ public class TableHolder
 
             if (_tables.TryGetValue(tableId, out var table))
             {
-                var player = table.Game.AddPlayer(playerName);
-
-                table.Players.Add(new()
-                    { Player = player, AuthSecret = playerSecret });
-
-                WriteLog(table, playerSecret, "join to table");
-
-                if (table.Owner == null)
+                lock (table.SyncRoot)
                 {
-                    table.Owner = player;
+                    var player = table.Game.AddPlayer(playerName);
+
+                    table.Players.Add(new()
+                        { Player = player, AuthSecret = playerSecret });
+
+                    WriteLog(table, playerSecret, "join to table");
+
+                    if (table.Owner == null)
+                    {
+                        table.Owner = player;
+                    }
+
+                    table.CleanLeaverPlayer();
+                    table.Version++;
                 }
 
-                table.CleanLeaverPlayer();
-                table.Version++;
                 TablesVersion++;
             }
             else
@@ -148,33 +152,37 @@ public class TableHolder
 
             var botSecret = Guid.NewGuid().ToString();
 
-            var takenNames = table.Players.Select(x => x.Player.Name).ToHashSet(StringComparer.Ordinal);
-            string botName;
-
-            if (BotNames.PickName(takenNames) is { } themedName)
+            lock (table.SyncRoot)
             {
-                botName = themedName;
+                var takenNames = table.Players.Select(x => x.Player.Name).ToHashSet(StringComparer.Ordinal);
+                string botName;
+
+                if (BotNames.PickName(takenNames) is { } themedName)
+                {
+                    botName = themedName;
+                }
+                else
+                {
+                    botName = "Бот " + _botNumber;
+                    _botNumber++;
+                }
+
+                var player = table.Game.AddPlayer(botName);
+
+                table.Players.Add(new()
+                    { Player = player, AuthSecret = botSecret, IsBot = true });
+
+                WriteLog(table, botSecret, "add bot: " + botName);
+
+                if (table.Owner == null)
+                {
+                    table.Owner = player;
+                }
+
+                table.CleanLeaverPlayer();
+                table.Version++;
             }
-            else
-            {
-                botName = "Бот " + _botNumber;
-                _botNumber++;
-            }
 
-            var player = table.Game.AddPlayer(botName);
-
-            table.Players.Add(new()
-                { Player = player, AuthSecret = botSecret, IsBot = true });
-
-            WriteLog(table, botSecret, "add bot: " + botName);
-
-            if (table.Owner == null)
-            {
-                table.Owner = player;
-            }
-
-            table.CleanLeaverPlayer();
-            table.Version++;
             TablesVersion++;
         }
     }
@@ -249,40 +257,47 @@ public class TableHolder
     {
         lock (_sync)
         {
-            WriteLog(table, tablePlayer.AuthSecret, "leave from table");
-
-            var playerIndex = table.Game.Players.IndexOf(tablePlayer.Player);
-
-            if (table.Game.Status == GameStatus.InProcess)
+            lock (table.SyncRoot)
             {
-                table.LeavePlayer = tablePlayer.Player;
-                table.LeavePlayerIndex = playerIndex;
-                WriteLog(table, "", "leaver: " + tablePlayer.Player.Name);
-            }
+                WriteLog(table, tablePlayer.AuthSecret, "leave from table");
 
-            table.Game.LeavePlayer(playerIndex);
-            table.Players.Remove(tablePlayer);
+                var playerIndex = table.Game.Players.IndexOf(tablePlayer.Player);
 
-            if (table.Game.Status != GameStatus.InProcess)
-            {
-                table.CleanStopRound();
-                table.CleanAllAfkTime();
-            }
-
-            if (table.Players.All(x => x.IsBot))
-            {
-                _tables.Remove(table.Id);
-            }
-            else
-            {
-                if (table.Players.All(x => x.Player != table.Owner))
+                if (table.Game.Status == GameStatus.InProcess)
                 {
-                    table.Owner = table.Players.First(x => x.IsBot == false).Player;
+                    table.LeavePlayer = tablePlayer.Player;
+                    table.LeavePlayerIndex = playerIndex;
+                    WriteLog(table, "", "leaver: " + tablePlayer.Player.Name);
                 }
+
+                table.Game.LeavePlayer(playerIndex);
+                table.Players.Remove(tablePlayer);
+
+                if (table.Game.Status != GameStatus.InProcess)
+                {
+                    table.CleanStopRound();
+                    table.CleanAllAfkTime();
+                }
+
+                if (table.Players.All(x => x.IsBot))
+                {
+                    _tables.Remove(table.Id);
+                }
+                else
+                {
+                    if (table.Players.All(x => x.Player != table.Owner))
+                    {
+                        table.Owner = table.Players.First(x => x.IsBot == false).Player;
+                    }
+                }
+
+                TablesVersion++;
+                table.Version++;
             }
 
-            TablesVersion++;
-            table.Version++;
+            // Ушедший мог быть единственным несказавшим атакующим — пересчитать вне table.SyncRoot,
+            // т.к. TryCloseAfterRosterChange сам его берёт (и это уже реентрантно относительно _sync).
+            table.TryCloseAfterRosterChange();
         }
     }
 
@@ -370,10 +385,12 @@ public class TableHolder
     }
 
     /// <summary>
-    /// Боты-атакующие, которым больше нечего подкинуть, сразу говорят «Бито» в окне удачной защиты —
-    /// тогда раунд закрывается, как только отказались все атакующие, а не висит до общего таймера (issue F5).
+    /// Боты-атакующие, которым больше нечего подкинуть, говорят «Бито» в окне удачной защиты или «беру» —
+    /// тогда раунд закрывается, как только отказались все атакующие, а не висит до общего таймера (issue F5, #10).
     /// Бот, у которого ещё есть подходящий подкид, молчит: его ход исполнит <see cref="CheckBots" /> на этом же
-    /// тике. Под общим <see cref="_sync" />. Голос «Бито» сбрасывается на каждом новом окне остановки раунда.
+    /// тике. НЕ БОЛЕЕ ОДНОГО голоса за тик на стол (как <see cref="CheckBots" />) — иначе все боты без карт
+    /// озвучивают «Бито» в один и тот же тик открытия окна, что мгновенно выдаёт человеку отсутствие подкида.
+    /// Под общим <see cref="_sync" />. Голос «Бито» сбрасывается на каждом новом окне остановки раунда.
     /// </summary>
     private void CheckBotBeats()
     {
@@ -381,7 +398,7 @@ public class TableHolder
         {
             if (table.Game.Status != GameStatus.InProcess
                 || table.StopRoundBeginDate == null
-                || table.StopRoundStatus != StopRoundStatus.SuccessDefence)
+                || table.StopRoundStatus is not (StopRoundStatus.SuccessDefence or StopRoundStatus.Take))
             {
                 continue;
             }
@@ -417,6 +434,8 @@ public class TableHolder
 
                     logger.Warn("bot beat rejected (" + tablePlayer.Player.Name + "): " + ex.Message);
                 }
+
+                break;
             }
         }
     }
@@ -443,6 +462,13 @@ public class TableHolder
             {
                 if (tablePlayer.IsBot == false)
                 {
+                    continue;
+                }
+
+                if (table.StopRoundBeginDate != null && tablePlayer.SaidBeat)
+                {
+                    // Уже сказал «Бито» в этом окне остановки раунда — CheckBotBeats это уже решил на этом
+                    // же тике, повторный DecideMove для него бессмыслен (issue: двойной DecideMove за тик).
                     continue;
                 }
 
@@ -529,21 +555,24 @@ public class TableHolder
 
             try
             {
-                if (table.StopRoundStatus == null)
+                lock (table.SyncRoot)
                 {
-                    throw new("stop round status is null");
-                }
+                    if (table.StopRoundStatus == null)
+                    {
+                        throw new("stop round status is null");
+                    }
 
-                var seconds = GetStopRoundSeconds(table.StopRoundStatus.Value);
-                var finishTime = table.StopRoundBeginDate.Value.AddSeconds(seconds);
+                    var seconds = GetStopRoundSeconds(table.StopRoundStatus.Value);
+                    var finishTime = table.StopRoundBeginDate.Value.AddSeconds(seconds);
 
-                if (DateTime.UtcNow >= finishTime)
-                {
-                    table.StopRoundStatus = null;
-                    table.StopRoundBeginDate = null;
-                    table.Game.StopRound();
-                    table.SetActivePlayerAfkStartTime();
-                    table.Version++;
+                    if (DateTime.UtcNow >= finishTime)
+                    {
+                        table.StopRoundStatus = null;
+                        table.StopRoundBeginDate = null;
+                        table.Game.StopRound();
+                        table.SetActivePlayerAfkStartTime();
+                        table.Version++;
+                    }
                 }
             }
             catch (Exception ex)

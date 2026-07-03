@@ -24,6 +24,8 @@
                          AfkEndTime="item.Player.AfkEndTime"
                          StopRoundStatus="View.StopRoundStatus"
                          StopRoundEndDate="View.StopRoundEndDate"
+                         ShowBeatVote="@(View.StopRoundStatus != null && item.GameIndex != View.DefencePlayerIndex && item.Player.CardsCount > 0)"
+                         SaidBeat="item.Player.SaidBeat"
                          CanKick="CanKick"
                          OnKick="OnKick" />
         }

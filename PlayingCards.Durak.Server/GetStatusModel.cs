@@ -52,9 +52,15 @@ public class GetStatusModel
         public string? MyReply { get; set; }
 
         /// <summary>
-        /// Мне доступно «Бито» — я атакующий в окне удачной защиты и могу закрыть раунд (issue F5).
+        /// Мне доступно «Бито» — я атакующий в окне удачной защиты/«беру» и могу закрыть раунд (issue F5, #10).
         /// </summary>
         public bool CanBeat { get; set; }
+
+        /// <summary>
+        /// Я уже сказал «Бито» в текущем окне остановки раунда (issue #11 — индикация своего голоса,
+        /// не только исчезнувшая кнопка).
+        /// </summary>
+        public bool MySaidBeat { get; set; }
     }
 
     public class CardModel
@@ -98,5 +104,10 @@ public class GetStatusModel
         /// Свежая реплика соперника («Бито!») — баббл над его бейджем (issue F5).
         /// </summary>
         public string? Reply { get; set; }
+
+        /// <summary>
+        /// Соперник уже сказал «Бито» в текущем окне остановки раунда — индикатор голосования (issue #11).
+        /// </summary>
+        public bool SaidBeat { get; set; }
     }
 }

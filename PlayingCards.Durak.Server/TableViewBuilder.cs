@@ -41,10 +41,11 @@ public static class TableViewBuilder
                 : table.StopRoundBeginDate.Value.AddSeconds(TableHolder.GetStopRoundSeconds(table.StopRoundStatus.Value)),
             MyReply = FreshReply(me),
             CanBeat = table.StopRoundBeginDate != null
-                && table.StopRoundStatus == StopRoundStatus.SuccessDefence
+                && table.StopRoundStatus is StopRoundStatus.SuccessDefence or StopRoundStatus.Take
                 && game.DefencePlayer != me.Player
                 && me.Player.Hand.Cards.Count > 0
                 && me.SaidBeat == false,
+            MySaidBeat = me.SaidBeat,
         };
 
         var mePlayer = game.Players.FirstOrDefault(x => x == me.Player);
@@ -70,6 +71,7 @@ public static class TableViewBuilder
                 AfkEndTime = x.AfkStartTime?.AddSeconds(TableHolder.AFK_SECONDS),
                 IsBot = x.IsBot,
                 Reply = FreshReply(x),
+                SaidBeat = x.SaidBeat,
             })
             .ToArray();
 

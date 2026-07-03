@@ -176,8 +176,9 @@ public class BeatTests
         Assert.That(ex!.Message, Is.EqualTo("Сейчас нельзя закрыть раунд"));
     }
 
+    /// <summary>«Бито» теперь работает и в окне «беру» (issue #10) — атакующим больше нечего подкинуть.</summary>
     [Test]
-    public void Beat_DuringTake_Throws()
+    public void Beat_DuringTake_ClosesRoundEarly()
     {
         var (table, p0, _) = BuildHeldTable();
 
@@ -186,8 +187,25 @@ public class BeatTests
 
         Assert.That(table.StopRoundStatus, Is.EqualTo(StopRoundStatus.Take));
 
-        var ex = Assert.Throws<BusinessException>(() => table.Beat("s0"));
-        Assert.That(ex!.Message, Is.EqualTo("Сейчас нельзя закрыть раунд"));
+        table.Beat("s0");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(table.StopRoundStatus, Is.Null, "единственный атакующий сказал «Бито» — ждать некого");
+            Assert.That(table.StopRoundBeginDate, Is.Null);
+        });
+    }
+
+    [Test]
+    public void Beat_DuringTake_ByDefender_Throws()
+    {
+        var (table, p0, _) = BuildHeldTable();
+
+        table.PlayCards("s0", [ServerTestHelper.HandIndex(p0, "8♠")]);
+        table.Take("s1");
+
+        var ex = Assert.Throws<BusinessException>(() => table.Beat("s1"));
+        Assert.That(ex!.Message, Is.EqualTo("Защищающийся не закрывает раунд"));
     }
 
     [Test]
@@ -197,5 +215,81 @@ public class BeatTests
 
         var ex = Assert.Throws<BusinessException>(() => table.Beat("s1"));
         Assert.That(ex!.Message, Is.EqualTo("Защищающийся не закрывает раунд"));
+    }
+
+    [Test]
+    public void Beat_EmptyHand_Throws()
+    {
+        var (table, p0, _) = BuildSuccessDefence();
+        p0.Hand.Clear();
+
+        var ex = Assert.Throws<BusinessException>(() => table.Beat("s0"));
+        Assert.That(ex!.Message, Is.EqualTo("Нечего подкидывать — голос не нужен"));
+    }
+
+    [Test]
+    public void Beat_Repeated_Throws()
+    {
+        var holder = new TableHolder();
+        var table = holder.CreateTable();
+        table.Game = new Game { Deck = new(new SortedDeckCardGenerator([Attacker, Defender, SecondAttacker], Trump)) };
+        holder.Join(table.Id, "s0", "Owner");
+        holder.Join(table.Id, "s1", "Bob");
+        holder.Join(table.Id, "s2", "Cat");
+        table.StartGame();
+
+        var p0 = table.Players.Single(x => x.AuthSecret == "s0").Player;
+        var p1 = table.Players.Single(x => x.AuthSecret == "s1").Player;
+
+        table.PlayCards("s0", [ServerTestHelper.HandIndex(p0, "8♠")]);
+        table.PlayCards("s1", [ServerTestHelper.HandIndex(p1, "9♠")], 0);
+        table.Beat("s0");
+
+        var ex = Assert.Throws<BusinessException>(() => table.Beat("s0"));
+        Assert.That(ex!.Message, Is.EqualTo("Вы уже сказали «Бито»"));
+    }
+
+    [Test]
+    public void Defence_AllAttackersOutOfCards_ClosesRoundImmediately()
+    {
+        var (table, p0, p1) = BuildHeldTable();
+
+        table.PlayCards("s0", [ServerTestHelper.HandIndex(p0, "8♠")]);
+        p0.Hand.Clear();
+
+        table.PlayCards("s1", [ServerTestHelper.HandIndex(p1, "9♠")], 0);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(table.StopRoundStatus, Is.Null, "единственный атакующий без карт — ждать некого");
+            Assert.That(table.StopRoundBeginDate, Is.Null);
+            Assert.That(table.Game.DiscardCardsCount, Is.EqualTo(2), "отбитая пара ушла в бито");
+        });
+    }
+
+    [Test]
+    public void Leave_UnvotedAttacker_ClosesRoundForRemainingVoters()
+    {
+        var holder = new TableHolder();
+        var table = holder.CreateTable();
+        table.Game = new Game { Deck = new(new SortedDeckCardGenerator([Attacker, Defender, SecondAttacker], Trump)) };
+        holder.Join(table.Id, "s0", "Owner");
+        holder.Join(table.Id, "s1", "Bob");
+        holder.Join(table.Id, "s2", "Cat");
+        table.StartGame();
+
+        var p0 = table.Players.Single(x => x.AuthSecret == "s0").Player;
+        var p1 = table.Players.Single(x => x.AuthSecret == "s1").Player;
+
+        table.PlayCards("s0", [ServerTestHelper.HandIndex(p0, "8♠")]);
+        table.PlayCards("s1", [ServerTestHelper.HandIndex(p1, "9♠")], 0);
+        Assert.That(table.StopRoundStatus, Is.EqualTo(StopRoundStatus.SuccessDefence));
+
+        table.Beat("s0");
+        Assert.That(table.StopRoundStatus, Is.EqualTo(StopRoundStatus.SuccessDefence), "s2 ещё не сказал «Бито»");
+
+        holder.Leave("s2");
+
+        Assert.That(table.StopRoundStatus, Is.Null, "ушедший был единственным несказавшим — раунд закрылся сразу");
     }
 }
