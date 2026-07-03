@@ -123,6 +123,10 @@
     filter: none;
 }
 
+.play-card.pre-fly {
+    visibility: hidden;
+}
+
 .play-card.disabled,
 .play-card.unplayable,
 .play-card.dimmed {

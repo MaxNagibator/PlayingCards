@@ -45,7 +45,8 @@
                     var dim = !Session.NoHints && clickable && !_fieldSelectable.Contains(idx);
                     var attackCss = "attack-card"
                         + (clickable ? "" : " static")
-                        + (dim ? " dimmed" : "");
+                        + (dim ? " dimmed" : "")
+                        + (IsFresh(fc.AttackCard) ? " pre-fly" : "");
 
                     <div class="field-card" data-field-index="@idx" @key="(fc.AttackCard!.Rank * 4 + fc.AttackCard.Suit)">
                         <CardView Card="fc.AttackCard!"
@@ -54,7 +55,8 @@
                                   OnClick="() => ToggleField(idx)" />
                         @if (fc.DefenceCard != null)
                         {
-                            <CardView Card="fc.DefenceCard" CssClass="defence-card" />
+                            var defenceCss = "defence-card" + (IsFresh(fc.DefenceCard) ? " pre-fly" : "");
+                            <CardView Card="fc.DefenceCard" CssClass="@defenceCss" />
                         }
                     </div>
                 }
@@ -70,10 +72,10 @@
                     var card = _view.MyCards![idx];
                     var selectable = _handSelectable.Contains(idx);
                     var selected = _handActive.Contains(idx);
-                    var handCss = !selectable && !Session.NoHints ? "dimmed" : "";
-                    var isFresh = _freshHandKeys.Contains(BoardSnapshot.Key(card));
+                    var handCss = (!selectable && !Session.NoHints ? "dimmed" : "")
+                        + (IsFresh(card) ? " pre-fly" : "");
 
-                    <div class="hand-slot @(isFresh ? "pre-fly" : "")"
+                    <div class="hand-slot"
                          data-hand-index="@idx"
                          data-card-key="@BoardSnapshot.Key(card)"
                          data-playable="@(selectable ? "true" : "false")"
@@ -151,7 +153,15 @@
 
     private BoardSnapshot? _prevSnapshot;
     private BoardDiff? _pendingDiff;
-    private HashSet<string> _freshHandKeys = [];
+
+    /// <summary>
+    /// Ключи карт, впервые появившихся в этом рендере (добор в руку, подкид, отбой) — из
+    /// <see cref="BoardDiff.FreshKeys"/>. Рендерятся классом <c>pre-fly</c> (visibility:hidden в
+    /// CardView.razor.css), чтобы карта не мелькнула в финальной позиции до того, как JS (после
+    /// RTT до клиента) спрячет её и запустит анимацию прилёта. Живёт ровно один рендер —
+    /// очищается в <see cref="OnAfterRenderAsync"/> вместе с забором <c>_pendingDiff</c>.
+    /// </summary>
+    private HashSet<string> _freshKeys = [];
     private readonly HashSet<string> _justPlayedByMe = [];
     private HandSortMode? _appliedSort;
 
@@ -234,6 +244,7 @@
         {
             var diff = _pendingDiff;
             _pendingDiff = null;
+            _freshKeys = [];
 
             try
             {
@@ -289,29 +300,15 @@
         _fieldActive.RemoveWhere(i => i >= (_view.Cards?.Length ?? 0));
         UpdateSelectables();
 
-        _freshHandKeys = ComputeFreshHandKeys(prev, next);
-
         var diff = BoardDiff.Compute(prev, next, _justPlayedByMe);
         _pendingDiff = _pendingDiff is { IsEmpty: false } pending ? pending.MergedWith(diff) : diff;
+        _freshKeys = _pendingDiff.FreshKeys;
         _justPlayedByMe.Clear();
         _prevSnapshot = next;
     }
 
-    /// <summary>
-    /// Ключи карт, добавленных в свою руку с прошлого снапшота (добор). Рендерится классом
-    /// <c>pre-fly</c> (visibility:hidden), чтобы карта не мелькнула в финальной позиции до того,
-    /// как JS (после RTT до клиента) спрячет её и запустит анимацию прилёта из колоды.
-    /// </summary>
-    private static HashSet<string> ComputeFreshHandKeys(BoardSnapshot? prev, BoardSnapshot next)
-    {
-        if (prev == null || prev.MyIndex != next.MyIndex || prev.MyCards.Length == 0)
-        {
-            return [];
-        }
-
-        var prevKeys = new HashSet<string>(prev.MyCards);
-        return next.MyCards.Where(k => k.Length > 0 && !prevKeys.Contains(k)).ToHashSet();
-    }
+    /// <summary>Карта появилась в этом рендере впервые (см. <see cref="_freshKeys"/>) — пометить <c>pre-fly</c>.</summary>
+    private bool IsFresh(CardModel? card) => card != null && _freshKeys.Contains(BoardSnapshot.Key(card));
 
     private void UpdateSelectables()
     {
@@ -607,7 +604,8 @@
         List<DrawTo> Draws,
         int TakeTarget,
         List<CardFace> TakeCards,
-        List<CardFace> BeatCards)
+        List<CardFace> BeatCards,
+        HashSet<string> FreshKeys)
     {
         public bool IsEmpty => ThrowIns.Count == 0 && Covers.Count == 0 && Draws.Count == 0 && TakeCards.Count == 0 && BeatCards.Count == 0;
 
@@ -622,7 +620,8 @@
             [.. Draws, .. next.Draws],
             next.TakeTarget >= 0 ? next.TakeTarget : TakeTarget,
             [.. TakeCards, .. next.TakeCards],
-            [.. BeatCards, .. next.BeatCards]);
+            [.. BeatCards, .. next.BeatCards],
+            [.. FreshKeys, .. next.FreshKeys]);
 
         /// <summary>
         /// Плоская camelCase-проекция для JS (GameTable.razor.js#animate). Имена фиксируем явно,
@@ -654,10 +653,24 @@
             var takeCards = new List<CardFace>();
             var beatCards = new List<CardFace>();
             var takeTarget = -1;
+            var freshKeys = new HashSet<string>();
 
             if (prev == null || prev.MyIndex != next.MyIndex)
             {
-                return new BoardDiff(throwIns, covers, draws, takeTarget, takeCards, beatCards);
+                return new BoardDiff(throwIns, covers, draws, takeTarget, takeCards, beatCards, freshKeys);
+            }
+
+            if (prev.MyCards.Length > 0)
+            {
+                var prevMyKeys = new HashSet<string>(prev.MyCards);
+
+                foreach (var k in next.MyCards)
+                {
+                    if (k.Length > 0 && !prevMyKeys.Contains(k))
+                    {
+                        freshKeys.Add(k);
+                    }
+                }
             }
 
             var prevAttackSet = new HashSet<string>(prev.FieldAttacks);
@@ -680,6 +693,7 @@
                         var face = Face(key);
                         var from = myPrev.Contains(key) && !myNext.Contains(key) ? next.MyIndex : thrower;
                         throwIns.Add(new ThrowIn(face.Rank, face.Suit, i, from));
+                        freshKeys.Add(key);
                     }
                 }
             }
@@ -698,6 +712,7 @@
 
                     var face = Face(def);
                     covers.Add(new Cover(face.Rank, face.Suit, i, defender));
+                    freshKeys.Add(def);
                 }
             }
 
@@ -746,7 +761,7 @@
                 }
             }
 
-            return new BoardDiff(throwIns, covers, draws, takeTarget, takeCards, beatCards);
+            return new BoardDiff(throwIns, covers, draws, takeTarget, takeCards, beatCards, freshKeys);
         }
     }
 }
