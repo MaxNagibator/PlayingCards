@@ -118,7 +118,9 @@
                          Reply="@_view.MyReply"
                          AfkEndTime="_view.AfkEndTime"
                          StopRoundStatus="_view.StopRoundStatus"
-                         StopRoundEndDate="_view.StopRoundEndDate" />
+                         StopRoundEndDate="_view.StopRoundEndDate"
+                         ShowBeatVote="@(_view.StopRoundStatus != null && _view.MyPlayerIndex != _view.DefencePlayerIndex && (_view.MyCards?.Length ?? 0) > 0)"
+                         SaidBeat="_view.MySaidBeat" />
         </section>
 
         @if (_error != null)
@@ -457,12 +459,21 @@
 
     /// <summary>
     /// «Бито»: атакующий объявляет, что больше не подкидывает (issue F5). Раунд закроется, когда
-    /// «Бито» скажут все атакующие, иначе — по общему таймеру. Серверный <see cref="Table.Beat"/>
-    /// валидирует окно/роль и кидает <see cref="BusinessException"/>, которую Guard сольёт в ErrorToast.
+    /// «Бито» скажут все атакующие, иначе — по общему таймеру. Кнопка видна только пока <c>CanBeat</c>,
+    /// поэтому отказ сервера здесь — всегда гонка (окно закрылось таймером/другим голосом между рендером
+    /// и кликом), а не ошибка пользователя: тихо игнорируем, без ErrorToast (issue #12).
     /// </summary>
     private async Task Beat()
     {
-        await Guard(() => Table.Beat(Me.AuthSecret));
+        try
+        {
+            Table.Beat(Me.AuthSecret);
+        }
+        catch (BusinessException)
+        {
+        }
+
+        await OnChanged.InvokeAsync();
     }
 
     /// <summary>

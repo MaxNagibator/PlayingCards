@@ -39,6 +39,14 @@
         }
     </div>
     <img src="/images/player.png" />
+    @if (ShowBeatVote)
+    {
+        <span class="beat-vote @(SaidBeat ? "voted" : "waiting")"
+              title="@(SaidBeat ? "Сказал «Бито»" : "Ждём «Бито»")"
+              aria-label="@(SaidBeat ? "Сказал «Бито»" : "Ждём «Бито»")">
+            @(SaidBeat ? "✓" : "…")
+        </span>
+    }
     <label class="player-name" title="@Name">@Name</label>
     @if (CardsCount > 0)
     {
@@ -95,4 +103,10 @@
     [Parameter] public int? StopRoundStatus { get; set; }
 
     [Parameter] public DateTime? StopRoundEndDate { get; set; }
+
+    /// <summary>Показать индикатор голосования «Бито» — вызывающая сторона решает, атакующий ли это с картами (issue #11).</summary>
+    [Parameter] public bool ShowBeatVote { get; set; }
+
+    /// <summary>Голос «Бито» уже засчитан.</summary>
+    [Parameter] public bool SaidBeat { get; set; }
 }
