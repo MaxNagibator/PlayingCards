@@ -28,7 +28,7 @@
 
         try
         {
-            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Game/countdown.js");
+            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Game/Countdown.razor.js");
             await _module.InvokeVoidAsync("start", _label, endMs, Kind);
         }
         catch (JSDisconnectedException)
