@@ -65,7 +65,7 @@
 
         try
         {
-            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Game/clipboard.js");
+            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./Components/Game/InvitePopup.razor.js");
             ok = await _module.InvokeAsync<bool>("copyText", InviteLink);
         }
         catch (JSException)
