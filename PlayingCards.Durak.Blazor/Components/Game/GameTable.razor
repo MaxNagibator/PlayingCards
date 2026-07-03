@@ -71,8 +71,9 @@
                     var selectable = _handSelectable.Contains(idx);
                     var selected = _handActive.Contains(idx);
                     var handCss = !selectable && !Session.NoHints ? "dimmed" : "";
+                    var isFresh = _freshHandKeys.Contains(BoardSnapshot.Key(card));
 
-                    <div class="hand-slot"
+                    <div class="hand-slot @(isFresh ? "pre-fly" : "")"
                          data-hand-index="@idx"
                          data-card-key="@BoardSnapshot.Key(card)"
                          data-playable="@(selectable ? "true" : "false")"
@@ -150,6 +151,7 @@
 
     private BoardSnapshot? _prevSnapshot;
     private BoardDiff? _pendingDiff;
+    private HashSet<string> _freshHandKeys = [];
     private readonly HashSet<string> _justPlayedByMe = [];
     private HandSortMode? _appliedSort;
 
@@ -287,9 +289,28 @@
         _fieldActive.RemoveWhere(i => i >= (_view.Cards?.Length ?? 0));
         UpdateSelectables();
 
-        _pendingDiff = BoardDiff.Compute(prev, next, _justPlayedByMe);
+        _freshHandKeys = ComputeFreshHandKeys(prev, next);
+
+        var diff = BoardDiff.Compute(prev, next, _justPlayedByMe);
+        _pendingDiff = _pendingDiff is { IsEmpty: false } pending ? pending.MergedWith(diff) : diff;
         _justPlayedByMe.Clear();
         _prevSnapshot = next;
+    }
+
+    /// <summary>
+    /// Ключи карт, добавленных в свою руку с прошлого снапшота (добор). Рендерится классом
+    /// <c>pre-fly</c> (visibility:hidden), чтобы карта не мелькнула в финальной позиции до того,
+    /// как JS (после RTT до клиента) спрячет её и запустит анимацию прилёта из колоды.
+    /// </summary>
+    private static HashSet<string> ComputeFreshHandKeys(BoardSnapshot? prev, BoardSnapshot next)
+    {
+        if (prev == null || prev.MyIndex != next.MyIndex || prev.MyCards.Length == 0)
+        {
+            return [];
+        }
+
+        var prevKeys = new HashSet<string>(prev.MyCards);
+        return next.MyCards.Where(k => k.Length > 0 && !prevKeys.Contains(k)).ToHashSet();
     }
 
     private void UpdateSelectables()
@@ -589,6 +610,19 @@
         List<CardFace> BeatCards)
     {
         public bool IsEmpty => ThrowIns.Count == 0 && Covers.Count == 0 && Draws.Count == 0 && TakeCards.Count == 0 && BeatCards.Count == 0;
+
+        /// <summary>
+        /// Склеивает диф с ещё не показанным <paramref name="next"/>, если два <c>Rebuild()</c> успели
+        /// пройти до того, как клиент забрал предыдущий через <c>afterRender</c> (иначе первый диф
+        /// молча терялся при перезаписи <c>_pendingDiff</c>).
+        /// </summary>
+        public BoardDiff MergedWith(BoardDiff next) => new(
+            [.. ThrowIns, .. next.ThrowIns],
+            [.. Covers, .. next.Covers],
+            [.. Draws, .. next.Draws],
+            next.TakeTarget >= 0 ? next.TakeTarget : TakeTarget,
+            [.. TakeCards, .. next.TakeCards],
+            [.. BeatCards, .. next.BeatCards]);
 
         /// <summary>
         /// Плоская camelCase-проекция для JS (GameTable.razor.js#animate). Имена фиксируем явно,
