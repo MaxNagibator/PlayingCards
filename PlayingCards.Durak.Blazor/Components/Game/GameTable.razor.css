@@ -256,6 +256,10 @@
     touch-action: none;
 }
 
+.hand-slot.pre-fly ::deep .play-card {
+    visibility: hidden;
+}
+
 .hand-slot[data-playable="true"] ::deep .play-card {
     cursor: grab;
 }

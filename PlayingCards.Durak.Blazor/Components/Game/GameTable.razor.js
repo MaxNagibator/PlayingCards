@@ -11,6 +11,7 @@ const ANIM_MAX_CLONES = 14;
 let handRects = new Map();
 let freshSlots = [];
 let dealDur = 0;
+let handObserver = null;
 
 function dealDuration() {
     if (!dealDur) {
@@ -30,11 +31,23 @@ export function init(rootEl, dotNetRef) {
     root = rootEl;
     dnet = dotNetRef;
     root.addEventListener('pointerdown', onPointerDown);
+
+    // MutationObserver ловит перестановку .hand-slot синхронно, микротаском сразу после
+    // DOM-патча Blazor, до пейнта. afterRender() же приходит только после RTT сервер-клиент
+    // и потому не успевает измерить/спрятать карту до кадра.
+    handObserver = new MutationObserver(syncHand);
+    handObserver.observe(root, { childList: true, subtree: true });
+    syncHand();
 }
 
 export function dispose() {
     if (root) {
         root.removeEventListener('pointerdown', onPointerDown);
+    }
+
+    if (handObserver) {
+        handObserver.disconnect();
+        handObserver = null;
     }
 
     detachWindow();
@@ -415,9 +428,15 @@ export function afterRender(diff) {
         return;
     }
 
-    syncHand();
+    if (prefersReducedMotion()) {
+        for (const slot of freshSlots) {
+            releasePreFly(slot);
+        }
 
-    if (diff && !prefersReducedMotion()) {
+        return;
+    }
+
+    if (diff) {
         animate(diff);
     }
 }
@@ -458,6 +477,32 @@ function syncHand() {
 
     handRects = next;
     freshSlots = prevEmpty ? [] : fresh;
+
+    for (const slot of freshSlots) {
+        armPreFlyFallback(slot, reduced);
+    }
+}
+
+// Карта помечена сервером классом pre-fly (visibility:hidden), чтобы не мелькнуть в финальной
+// позиции до прилёта клона из колоды (flyCardOnto → land() снимает класс раньше срока). Если
+// diff не пришёл (budget исчерпан, обрыв связи, reduced-motion) — снимаем сами по таймауту,
+// иначе карта останется невидимой навсегда.
+function armPreFlyFallback(slot, reduced) {
+    if (reduced) {
+        releasePreFly(slot);
+        return;
+    }
+
+    setTimeout(() => releasePreFly(slot), dealDuration() + 250);
+}
+
+function releasePreFly(slot) {
+    slot.classList.remove('pre-fly');
+    const card = slot.querySelector('.play-card');
+
+    if (card) {
+        card.style.visibility = '';
+    }
 }
 
 function animate(diff) {
@@ -710,6 +755,7 @@ function flyCardOnto(layer, token, cardEl, from, delay, endRot) {
 
         done = true;
         cardEl.style.visibility = '';
+        cardEl.closest('.hand-slot')?.classList.remove('pre-fly');
         clone.remove();
     }
 
