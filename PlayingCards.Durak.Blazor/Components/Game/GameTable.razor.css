@@ -4,6 +4,7 @@
     position: relative;
     z-index: 0;
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto auto 1fr auto;
     gap: 1rem;
     min-height: min(70vh, 620px);
@@ -225,7 +226,7 @@
 .hand {
     display: flex;
     flex-wrap: nowrap;
-    justify-content: center;
+    justify-content: safe center;
     align-items: flex-end;
     gap: 0.55rem;
     width: 100%;
@@ -336,5 +337,43 @@
 
     .opponents {
         min-height: 6rem;
+    }
+
+    .hand {
+        gap: 0;
+        width: calc(100% + 2rem);
+        margin-inline: -1rem;
+        padding-inline: 0.2rem;
+    }
+
+    .hand-slot {
+        flex: 0 1 3.6rem;
+        min-width: 1.1rem;
+    }
+
+    .hand-slot:last-child {
+        flex-shrink: 0;
+    }
+
+    .hand-slot ::deep .play-card {
+        width: 3.6rem;
+        height: 5.1rem;
+    }
+
+    .hand-slot ::deep .card-index-tl,
+    .hand-float ::deep .card-index-tl {
+        left: 0.16rem;
+    }
+
+    .hand-slot ::deep .card-rank,
+    .hand-float ::deep .card-rank {
+        font-size: 0.9rem;
+        letter-spacing: -0.1em;
+    }
+
+    .hand-slot ::deep .play-card.dimmed,
+    .hand-slot ::deep .play-card.dimmed:hover {
+        opacity: 1;
+        filter: grayscale(0.4) brightness(0.62);
     }
 }

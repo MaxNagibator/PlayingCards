@@ -4,9 +4,9 @@
     "net10.0": {
       "Microsoft.AspNetCore.App.Internal.Assets": {
         "type": "Direct",
-        "requested": "[10.0.9, )",
-        "resolved": "10.0.9",
-        "contentHash": "E9Wp/LPKAYkGOVBv4lt5U5TnUA/7pov7QZAwF3eI64kK8AAXqkPDwuadEOwpL1WXEfgecYm0fccluvABp32D8g=="
+        "requested": "[10.0.12, )",
+        "resolved": "10.0.12",
+        "contentHash": "+sIBo9AMBZH46qHWHQdfzcGMt+RuBaPYrUMOAM9VjA7MQ9QtIez3lq1C3E05+Yroa94KKt3DSWaxmCI4H28a9Q=="
       },
       "NLog": {
         "type": "Direct",
@@ -23,15 +23,25 @@
           "NLog.Extensions.Logging": "5.3.11"
         }
       },
-      "playingcards.durak": {
+      "playingcards.core": {
         "type": "Project"
+      },
+      "playingcards.durak": {
+        "type": "Project",
+        "dependencies": {
+          "PlayingCards.Core": "[1.0.0, )"
+        }
       },
       "playingcards.durak.server": {
         "type": "Project",
         "dependencies": {
           "NLog": "[5.3.2, )",
-          "PlayingCards.Durak": "[1.0.0, )"
+          "PlayingCards.Durak": "[1.0.0, )",
+          "PlayingCards.Server.Core": "[1.0.0, )"
         }
+      },
+      "playingcards.server.core": {
+        "type": "Project"
       },
       "NLog.Extensions.Logging": {
         "type": "CentralTransitive",

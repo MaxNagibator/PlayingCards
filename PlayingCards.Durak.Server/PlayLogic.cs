@@ -39,6 +39,13 @@ public static class PlayLogic
     public static bool CanPlayCards(TableModel table, int[] handIndexes, int[] fieldIndexes)
     {
         var tableCardsCount = table.Cards?.Length ?? 0;
+        var handCount = table.MyCards?.Length ?? 0;
+
+        if (handIndexes.Any(i => i < 0 || i >= handCount)
+            || fieldIndexes.Any(i => i < 0 || i >= tableCardsCount || table.Cards![i].AttackCard == null))
+        {
+            return false;
+        }
 
         var isStartAttacking = handIndexes.Length > 0
             && table.ActivePlayerIndex == table.MyPlayerIndex
@@ -59,9 +66,9 @@ public static class PlayLogic
 
     /// <summary>
     /// Возвращает множество индексов карт в руке игрока, которые можно сыграть в текущей ситуации.
-    /// <paramref name="selectedHand"/> — уже выбранные индексы руки (для фильтра ранга стартовой атаки).
-    /// <paramref name="selectedField"/> — уже выбранные индексы атакующих карт на поле (для защиты).
-    /// Если рука пуста или ход не наш — возвращает пустое множество.
+    /// <paramref name="selectedHand"/> –уже выбранные индексы руки (для фильтра ранга стартовой атаки).
+    /// <paramref name="selectedField"/> –уже выбранные индексы атакующих карт на поле (для защиты).
+    /// Если рука пуста или ход не наш –возвращает пустое множество.
     /// </summary>
     public static HashSet<int> GetPlayableHandIndexes(TableModel table, HashSet<int> selectedHand, HashSet<int> selectedField)
     {
@@ -229,7 +236,7 @@ public static class PlayLogic
     }
 
     /// <summary>
-    /// Контекстная подсказка игроку — что сейчас делать.
+    /// Контекстная подсказка игроку –что сейчас делать.
     /// </summary>
     public static string? GetContextHint(TableModel table)
     {
@@ -244,7 +251,7 @@ public static class PlayLogic
 
         if (isMyTurn && tableCardsCount == 0)
         {
-            return "Ваш ход — выберите карту для атаки";
+            return "Ваш ход – выберите карту для атаки";
         }
 
         if (isMyDefence)

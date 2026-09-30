@@ -96,16 +96,28 @@
         "resolved": "8.0.0",
         "contentHash": "c9xLpVz6PL9lp/djOWtk5KPDZq3cSYpmXoJQY524EOtuFl5z9ZtsotpsyrDW40U1DRnQSYvcPKEUV0X//u6gkQ=="
       },
-      "playingcards.durak": {
+      "playingcards.core": {
         "type": "Project"
+      },
+      "playingcards.durak": {
+        "type": "Project",
+        "dependencies": {
+          "PlayingCards.Core": "[1.0.0, )"
+        }
       },
       "playingcards.durak.server": {
         "type": "Project",
         "dependencies": {
-          "Microsoft.Extensions.Hosting.Abstractions": "[8.0.0, )",
-          "Microsoft.Extensions.Logging.Abstractions": "[8.0.0, )",
           "NLog": "[5.3.2, )",
-          "PlayingCards.Durak": "[1.0.0, )"
+          "PlayingCards.Durak": "[1.0.0, )",
+          "PlayingCards.Server.Core": "[1.0.0, )"
+        }
+      },
+      "playingcards.server.core": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Extensions.Hosting.Abstractions": "[8.0.0, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[8.0.0, )"
         }
       },
       "Microsoft.Extensions.Hosting.Abstractions": {
